@@ -1,0 +1,1 @@
+Запустите ./StartApp.sh (требуется docker)

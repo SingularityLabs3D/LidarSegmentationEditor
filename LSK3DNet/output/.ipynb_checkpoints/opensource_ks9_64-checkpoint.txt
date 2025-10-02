@@ -1,0 +1,133 @@
+train_skitti.py
+{'format_version': 1, 'model_params': {'model_architecture': 'largekernelseg', 'input_dims': 13, 'spatial_shape': [2000, 2000, 120], 'scale_list': [2, 4, 8, 16], 'hiden_size': 64, 'num_classes': 20, 'large_kernel_size': [9, 9, 9], 'spatial_group_partition': [0, 3, 6, 9], 'model_load_path': 'output_skitti/opensource_9ks_s030_w64_0.pt', 'model_save_path': 'output_skitti/opensource_9ks_s030_w64_finetuned.pt'}, 'dataset_params': {'training_size': 7763, 'dataset_type': 'point_semkitti_mix', 'pc_dataset_type': 'SemKITTI_sk', 'collate_type': 'mix_collate_fn_default', 'ignore_label': 0, 'label_mapping': './config/label_mapping/semantic-kitti-sub.yaml', 'num_classes': 20, 'spatial_shape': [2000, 2000, 120], 'max_volume_space': [50, 50, 2], 'min_volume_space': [-50, -50, -4], 'seg_labelweights': [0, 55437630, 320797, 541736, 2578735, 3274484, 552662, 184064, 78858, 240942562, 17294618, 170599734, 6369672, 230413074, 101130274, 476491114, 9833174, 129609852, 4506626, 1168181], 'train_data_loader': {'data_path': '/workdir/datasets/SemanticKITTI/merged/', 'imageset': 'train', 'batch_size': 2, 'num_workers': 12, 'rotate_aug': False, 'flip_aug': False, 'scale_aug': False, 'transform_aug': False, 'dropout_aug': False, 'polarmix_aug': False, 'mix_aug': False, 'instance_aug': False, 'd_point_num': 135000}, 'val_data_loader': {'data_path': '/workdir/datasets/SemanticKITTI/merged/', 'num_workers': 12, 'imageset': 'val', 'batch_size': 4, 'rotate_aug': False, 'flip_aug': False, 'scale_aug': False, 'transform_aug': False, 'dropout_aug': False, 'polarmix_aug': False, 'mix_aug': False, 'd_point_num': 135000}}, 'train_params': {'seed': 1588147245, 'max_num_epochs': 50, 'learning_rate': 2e-05, 'optimizer': 'SGD', 'lr_scheduler': 'StepLR', 'momentum': 0.9, 'weight_decay': 0.0001, 'nesterov': True, 'lambda_lovasz': 1, 'decay_step': 1000, 'decay_rate': 0.9, 'eval_every_n_steps': 500, 'distributed': False, 'amp_enabled': True}, 'sparse_params': {'use_sparse': True, 'growth': 'random', 'prune': 'magnitude', 'redistribution': 'none', 'prune_rate': 0.3, 'sparsity': 0.3, 'sparse_init': 'ERK', 'update_frequency': 8000, 'stop_sparse_epoch': 0}, 'config_path': './config/lk-semantickitti_erk_finetune.yaml', 'ip': '127.0.0.1', 'port': '3020'}
+pre-train
+matched parameter sets: 257, and no matched: 0
+{'data_path': '/workdir/datasets/SemanticKITTI/merged/', 'imageset': 'train', 'batch_size': 2, 'num_workers': 12, 'rotate_aug': False, 'flip_aug': False, 'scale_aug': False, 'transform_aug': False, 'dropout_aug': False, 'polarmix_aug': False, 'mix_aug': False, 'instance_aug': False, 'd_point_num': 135000}
+{'data_path': '/workdir/datasets/SemanticKITTI/merged/', 'num_workers': 12, 'imageset': 'val', 'batch_size': 4, 'rotate_aug': False, 'flip_aug': False, 'scale_aug': False, 'transform_aug': False, 'dropout_aug': False, 'polarmix_aug': False, 'mix_aug': False, 'd_point_num': 135000}
+3677
+epoch 0 iter   499, loss: 4.974
+
+inference speed: 0.019697162859623158
+Validation per class iou: 
+car : 47.46%
+bicycle : 0.00%
+motorcycle : 0.00%
+truck : 0.00%
+bus : 0.23%
+person : 0.00%
+bicyclist : 0.00%
+motorcyclist : 3.73%
+road : 54.53%
+parking : 0.00%
+sidewalk : 0.00%
+other-ground : 53.95%
+building : 1.41%
+fence : 64.01%
+vegetation : 65.04%
+trunk : 17.61%
+terrain : 42.40%
+pole : 19.43%
+traffic-sign : 24.72%
+
+Saved: output_skitti/opensource_9ks_s030_w64_finetuned0.pt
+Current val miou is 20.764 while the best val miou is 20.764
+epoch 0 iter   999, loss: 4.931
+
+inference speed: 0.019610963093798155
+Validation per class iou: 
+car : 51.35%
+bicycle : 0.00%
+motorcycle : 0.00%
+truck : 0.00%
+bus : 3.63%
+person : 0.00%
+bicyclist : 0.00%
+motorcyclist : 4.39%
+road : 56.28%
+parking : 0.00%
+sidewalk : 0.00%
+other-ground : 52.29%
+building : 1.59%
+fence : 63.80%
+vegetation : 65.47%
+trunk : 21.86%
+terrain : 43.21%
+pole : 18.68%
+traffic-sign : 23.80%
+
+Saved: output_skitti/opensource_9ks_s030_w64_finetuned0.pt
+Current val miou is 21.387 while the best val miou is 21.387
+epoch 0 iter  1499, loss: 4.965
+
+inference speed: 0.019480077560338597
+Validation per class iou: 
+car : 55.21%
+bicycle : 0.00%
+motorcycle : 0.00%
+truck : 0.00%
+bus : 2.12%
+person : 0.00%
+bicyclist : 0.00%
+motorcyclist : 0.23%
+road : 55.08%
+parking : 0.00%
+sidewalk : 0.00%
+other-ground : 52.27%
+building : 2.23%
+fence : 63.80%
+vegetation : 65.63%
+trunk : 18.07%
+terrain : 43.11%
+pole : 19.55%
+traffic-sign : 22.47%
+
+Current val miou is 21.041 while the best val miou is 21.387
+epoch 0 iter  1999, loss: 4.957
+
+inference speed: 0.019492863964548395
+Validation per class iou: 
+car : 51.69%
+bicycle : 0.00%
+motorcycle : 0.00%
+truck : 0.00%
+bus : 3.16%
+person : 0.00%
+bicyclist : 0.00%
+motorcyclist : 2.92%
+road : 55.09%
+parking : 0.00%
+sidewalk : 0.00%
+other-ground : 51.83%
+building : 1.70%
+fence : 64.86%
+vegetation : 67.15%
+trunk : 19.56%
+terrain : 44.37%
+pole : 16.87%
+traffic-sign : 22.28%
+
+Current val miou is 21.131 while the best val miou is 21.387
+epoch 0 iter  2499, loss: 4.880
+
+inference speed: 0.01977922745987872
+Validation per class iou: 
+car : 53.79%
+bicycle : 0.00%
+motorcycle : 0.00%
+truck : 0.00%
+bus : 1.72%
+person : 0.00%
+bicyclist : 0.00%
+motorcyclist : 3.72%
+road : 62.08%
+parking : 0.00%
+sidewalk : 0.00%
+other-ground : 51.21%
+building : 4.83%
+fence : 64.03%
+vegetation : 66.81%
+trunk : 16.98%
+terrain : 44.06%
+pole : 17.37%
+traffic-sign : 24.42%
+

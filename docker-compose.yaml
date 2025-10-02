@@ -1,0 +1,49 @@
+services:
+  # completion:
+  #   image: ${COMPLETION_IMAGE}
+  #   container_name: completion_service
+  #   ports:
+  #     - "8002:8000"
+  #   restart: unless-stopped
+  #   networks:
+  #     - my_network
+
+  segmentation:
+    image: ${SEGMENTATION_IMAGE}
+    container_name: segmentation_service
+    shm_size: 2g
+    volumes:
+      - ${MOUNTDIR}:${MOUNTDIR}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all            # pass ALL GPUs
+              capabilities: [gpu]   # or [gpu, utility]
+    environment:
+      WORKDIR: ${WORKDIR}
+    restart: no
+    networks:
+      - my_network
+
+  converter:
+    image: ${CONVERTER_IMAGE}
+      # build: converter/
+    container_name: fastapi_service
+    ports:
+      - "8000:8000"
+    volumes:
+      #       - "${WORKDIR}:/home/.potree"
+      # - ${WORKDIR}:/workdir
+      - ${MOUNTDIR}:${MOUNTDIR}
+    environment:
+      WORKDIR: ${WORKDIR}
+    restart: unless-stopped
+    networks:
+      - my_network
+
+networks:
+  my_network:
+    driver: bridge
+

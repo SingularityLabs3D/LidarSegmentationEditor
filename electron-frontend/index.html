@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="utf-8">
+	<meta name="description" content="">
+	<meta name="author" content="">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+	<title>Potree Viewer</title>
+
+	<link rel="stylesheet" type="text/css" href="./libs/potree/potree.css">
+	<link rel="stylesheet" type="text/css" href="./libs/jquery-ui/jquery-ui.min.css">
+	<link rel="stylesheet" type="text/css" href="./libs/openlayers3/ol.css">
+	<link rel="stylesheet" type="text/css" href="./libs/spectrum/spectrum.css">
+	<link rel="stylesheet" type="text/css" href="./libs/jstree/themes/mixed/style.css">
+	<link rel="stylesheet" type="text/css" href="./src/desktop.css">
+
+	<style>
+
+	</style>
+</head>
+
+<body>
+
+	<div id="welcome_overlay" style="
+	position:absolute; inset:0; 
+	display:flex; flex-direction:column;
+	align-items:center; justify-content:center;
+	background:#111; color:#eee; z-index:2000000;
+	">
+		<h1>Welcome to Potree Desktop</h1>
+		<p>Select a PCD file to start</p>
+		<button id="open_pcd_btn" style="padding:1em;font-size:1.2em;">Choose PCD File</button>
+	</div>
+
+
+
+	<span id="pointcloud_file_dropzone" class="droproot">
+		<span style="position:absolute; left: 0px; right: 0px; top: 0px; bottom: 0px" class="dropzone">
+
+			<span class="middle">
+				<p class="dropzone_title">Convert and/or Load point clouds</p>
+
+				<ul class="dropzone_text">
+					<li>Drop LAS/LAZ files to convert and load them.</li>
+					<li>Drop folders to convert and load all files inside.</li>
+					<li>Drop previously converted cloud.js, metadata.json or containing directy to load.</li>
+				</ul>
+			</span>
+
+		</span>
+	</span>
+
+	<span id="converter_panel" class="middle">
+
+		<div class="converter_panel_widget">
+			Target Directory: <br>
+			<span style="display: flex">
+				<input id="converter_panel_target_directory" type="textfield" style="flex-grow: 1">
+				<!-- <span style="width: 0.2em"></span>
+				<input id="converter_panel_pick_target_directory" type="button" value="..."> -->
+			</span>
+			<div id="converter_panel_target_directory_warning" style="color: red">
+				&nbsp;
+			</div>
+		</div>
+
+		<div class="converter_panel_widget">
+			Input Files:
+			<div id="converter_panel_files" class="converter_panel_list">
+				<div>file 1</div>
+				<div>file 2</div>
+				<div>file 3</div>
+				<div>file 4</div>
+				<div>file 5</div>
+				<div>file 6</div>
+				<div>file 7</div>
+				<div>file 8</div>
+			</div>
+		</div>
+
+		<br>
+
+		<div class="converter_panel_widget">
+			Choose a Converter:
+			<div class="selection_buttons">
+
+				<input type="radio" id="selection_converter_version_1_7" name="selection_converter_version" value="all">
+				<label for="selection_converter_version_1_7" class="left">
+					<span class="title">PotreeConverter 1.7</span>
+					<ul>
+						<li>Older version that generates 1 file per octree node.</li>
+						<li>Try of PotreeConverter 2.0 causes issues.</li>
+					</ul>
+				</label>
+
+				<input type="radio" id="selection_converter_version_2_0" name="selection_converter_version"
+					value="false" checked>
+				<label for="selection_converter_version_2_0" class="right">
+					<span class="title">PotreeConverter 2.0</span>
+					<ul>
+						<li>Complete rewrite that generates a total of 3 files instead of thousands to millions.</li>
+					</ul>
+				</label>
+
+			</div>
+		</div>
+
+		<p>
+			<span style="display: flex">
+				<span style="flex-grow: 1"></span>
+				<input type="button" value="Start Conversion" id="converter_panel_start" />
+				<span style="width:1em"></span>
+				<input type="button" value="Cancel" id="converter_panel_cancel" />
+			</span>
+
+		</p>
+
+	</span>
+
+	<script>if (typeof module === 'object') { window.module = module; module = undefined; }</script>
+
+	<script src="./libs/jquery/jquery-3.1.1.min.js"></script>
+	<script src="./libs/spectrum/spectrum.js"></script>
+	<script src="./libs/jquery-ui/jquery-ui.min.js"></script>
+	<script src="./libs/other/BinaryHeap.js"></script>
+	<script src="./libs/tween/tween.min.js"></script>
+	<script src="./libs/d3/d3.js"></script>
+	<script src="./libs/proj4/proj4.js"></script>
+	<script src="./libs/openlayers3/ol.js"></script>
+	<script src="./libs/i18next/i18next.js"></script>
+	<script src="./libs/jstree/jstree.js"></script>
+	<script src="./libs/potree/potree.js"></script>
+	<script src="./libs/plasio/js/laslaz.js"></script>
+
+	<script>
+		let elSplatQuality = $("#converter_choice");
+		elSplatQuality.selectgroup({ title: "Converter Choice" });
+
+		elSplatQuality.find("input").click((e) => {
+			console.log(e.target.value);
+			// if(e.target.value === "standard"){
+			// 	this.viewer.useHQ = false;
+			// }else if(e.target.value === "hq"){
+			// 	this.viewer.useHQ = true;
+			// }
+		});
+	</script>
+
+	<div class="potree_container" style="position: absolute; width: 100%; height: 100%; left: 0px; top: 0px; ">
+		<div id="potree_render_area"></div>
+		<div id="potree_sidebar_container"> </div>
+	</div>
+
+
+	<script type="module">
+
+		import {
+			loadDroppedPointcloud,
+			createPlaceholder,
+			convert_17,
+			convert_20,
+			doConversion,
+			dragEnter, dragOver, dragLeave, dropHandler,
+		} from "./src/desktop.js";
+		const path = require('path');
+		const fs = require("fs");
+		const crypto = require("crypto");
+        const { ipcRenderer, mainWindow } = require('electron');
+
+		{
+			// open links in the standard browser instead of electron
+			// see https://github.com/electron/electron/issues/1344
+			const shell = require('electron').shell;
+			$(document).on('click', 'a[href^="http"]', function (event) {
+				event.preventDefault();
+				shell.openExternal(this.href);
+			});
+		}
+
+		let lastHash = null;
+		let watchingFile = null;
+
+		function hashFile(filePath) {
+			try {
+				const data = fs.readFileSync(filePath);
+				return crypto.createHash("md5").update(data).digest("hex");
+			} catch (err) {
+				console.error("Failed to hash file:", err);
+				return null;
+			}
+		}
+
+        function clearPotreeScene(viewer) {
+          const threeScene = viewer.scene.scene || viewer.scene.threeScene || viewer.scene;
+
+          // remove + dispose point clouds
+          const pcs = viewer.scene.pointclouds
+            ? [...viewer.scene.pointclouds]
+            : threeScene.children.filter(o =>
+                (typeof Potree !== "undefined" && o instanceof Potree.PointCloudOctree) ||
+                o.isPoints || o.numVisiblePoints !== undefined
+              );
+
+          for (const pc of pcs) {
+            if (viewer.scene.removePointCloud) { try { viewer.scene.removePointCloud(pc); } catch {} }
+            else {
+              try { threeScene.remove(pc); } catch {}
+              if (viewer.scene.pointclouds) {
+                const i = viewer.scene.pointclouds.indexOf(pc);
+                if (i >= 0) viewer.scene.pointclouds.splice(i, 1);
+              }
+            }
+            try { pc.dispose?.(); } catch {}
+            try { pc.root?.dispose?.(); } catch {}
+            try { pc.material?.dispose?.(); } catch {}
+            try { pc.geometry?.dispose?.(); } catch {}
+          }
+
+          // ⚠️ don’t reassign annotations = []
+          try { viewer.scene.annotations?.removeAll?.(); } catch {}
+          if (Array.isArray(viewer.scene.annotations)) viewer.scene.annotations.length = 0;
+
+          try { Potree?.Global?.lru?.clear?.(); } catch {}
+          try { viewer.scene.lru?.clear?.(); } catch {}
+          try { THREE?.Cache?.clear?.(); } catch {}
+
+          const wasEDL = viewer.getEDLEnabled?.() ?? false;
+          viewer.setEDLEnabled(false);
+          try {
+            const edl = viewer.pRenderer?.edl;
+            edl?.rtColor?.dispose?.();
+            edl?.rtDepth?.dispose?.();
+          } catch {}
+          viewer.setEDLEnabled(wasEDL);
+        }
+
+        function applyMaterialDefaults(mat) {
+          if (!mat) return;
+
+          // Potree 2.x (material has 'activeAttributeName')
+          if ('activeAttributeName' in mat) {
+            // color by per-point RGB(A)
+            mat.activeAttributeName = 'rgba';
+            if ('size' in mat) mat.size = 1.0;
+            if ('shape' in mat && Potree.PointShape && Potree.PointShape.CIRCLE !== undefined) {
+              mat.shape = Potree.PointShape.CIRCLE;
+            }
+            return;
+          }
+
+          // Potree 1.x enums (guard everything)
+          const PCT = (Potree && Potree.PointColorType) ? Potree.PointColorType : null;
+          if (PCT && 'pointColorType' in mat) {
+            mat.pointColorType = (PCT.RGB ?? PCT.COLOR ?? PCT.SOURCE);
+          }
+          if ('size' in mat) mat.size = 1.0;
+          if ('shape' in mat && Potree.PointShape && Potree.PointShape.CIRCLE !== undefined) {
+            mat.shape = Potree.PointShape.CIRCLE;
+          }
+        }
+
+        function reloadPointCloud(metaPath) {
+          clearPotreeScene(viewer);
+
+          Potree.loadPointCloud(metaPath, "cloud", (e) => {
+            const pc = e.pointcloud;
+
+            if (viewer.scene.addPointCloud) viewer.scene.addPointCloud(pc);
+            else (viewer.scene.scene || viewer.scene).add(pc);
+
+            applyMaterialDefaults(pc.material);
+            viewer.fitToScreen?.();
+          });
+        }
+
+		function startWatchingMetadata(metaPath) {
+			watchingFile = metaPath;
+			lastHash = hashFile(metaPath);
+
+			setInterval(() => {
+				const newHash = hashFile(metaPath);
+				console.log("Checking hashes: " + newHash + " " + lastHash);
+				if (newHash && newHash !== lastHash) {
+					console.log("Metadata changed, reloading:", metaPath);
+					lastHash = newHash;
+
+					// reload point cloud
+					// loadDroppedPointcloud(metaPath);
+                    reloadPointCloud(metaPath);
+
+					// if (window.viewer?.postMessage) {
+					window.viewer.postMessage(`Загружена новейшая сегментация: ${metaPath}`, { duration: 5000 });
+					// }
+				}
+			}, 10000); // every 10s
+		}
+
+
+
+		document.getElementById("open_pcd_btn").onclick = async () => {
+			const result = await ipcRenderer.invoke('pick-pcd');
+			if (!result.canceled && result.filePaths.length > 0) {
+				const filePath = result.filePaths[0];
+				console.log("Selected PCD:", filePath);
+				document.getElementById("welcome_overlay").style.display = "none";
+
+				const BASE_URL = "http://localhost:8000"; // change if needed
+
+				console.log("Here 1");
+				// Hide overlay
+				document.getElementById("welcome_overlay").style.display = "none";
+				console.log("Here 2");
+
+				// Build ?path=… safely
+				const params = new URLSearchParams({ path: filePath }); // auto-encodes slashes etc.
+				console.warn("Here 3");
+
+				const url = `${BASE_URL}/convert?${params.toString()}`;
+
+				console.log("fetching...");
+				const res = await fetch(url, {
+					method: "GET",
+					headers: { "accept": "application/json" }
+				});
+				console.log("fetched...");
+
+				window.viewer.postMessage(`Обработка файла:<br>${filePath}`, { duration: 4000 });
+
+				let metaPath;
+				if (!res.ok) {
+					throw new Error(`HTTP ${res.status} ${res.statusText}`);
+				} else {
+					const data = await res.json();
+					console.log("Server response:", data);
+					window.viewer.postMessage(`Загрузка первичного снимка:<br>${filePath}`, { duration: 5000 });
+
+                    // Optionally show a toast/message in Potree:
+                    let dir = data.output_directory;
+                    metaPath = path.join(data.output_directory, 'potree_output', 'metadata.json');
+
+                    // console.log("received path:" + metaPath);
+                    // loadDroppedPointcloud(metaPath);
+                    startWatchingMetadata(metaPath);
+                }
+			}
+		};
+
+
+		let elBody = document.body;
+
+		elBody.addEventListener("dragenter", dragEnter, false);
+		elBody.addEventListener("dragover", dragOver, false);
+		elBody.addEventListener("dragleave", dragLeave, false);
+		elBody.addEventListener("drop", dropHandler, false);
+
+		let elRenderArea = document.getElementById("potree_render_area");
+		let viewerArgs = {
+			noDragAndDrop: true,
+		};
+		window.viewer = new Potree.Viewer(elRenderArea, viewerArgs);
+
+		viewer.setEDLEnabled(true);
+		viewer.setFOV(60);
+		viewer.setPointBudget(3 * 1000 * 1000);
+		viewer.setMinNodeSize(0);
+		viewer.loadSettingsFromURL();
+
+		viewer.setDescription("");
+
+		viewer.loadGUI(() => {
+			viewer.setLanguage('en');
+			$("#menu_appearance").next().show();
+			$("#menu_tools").next().show();
+			$("#menu_scene").next().show();
+			$("#menu_filters").next().show();
+			viewer.toggleSidebar();
+
+
+			// let section = $(`
+			// 	<h3 id="menu_meta" class="accordion-header ui-widget"><span>Prototyping</span></h3>
+			// 	<div class="accordion-content ui-widget pv-menu-list"></div>
+			// `);
+			// let content = section.last();
+			// content.html(`
+			// <div class="pv-menu-list">
+			// 	<input id="btnExportLaz" type="button" value="export selection to LAZ"/>
+			// </div>
+			// `);
+			// section.first().click(() => content.slideToggle());
+			// section.insertBefore($('#menu_appearance'));
+
+			// let button = $("#btnExportLaz");
+			// button.click( () => {
+
+			// 	const {normalize} = require("path");
+
+			// 	let pointclouds = viewer.scene.pointclouds; //[0].pcoGeometry.url
+			// 	//let cmdInput = pointclouds.map(p => normalize(`${p.pcoGeometry.url}/../`)).join( );
+			// 	let inputPaths = pointclouds.map(p => normalize(`${p.pcoGeometry.url}/../`));
+
+			// 	let volumes = viewer.scene.volumes;
+			// 	let matrices = volumes.map(v => v.matrix.elements);
+
+			// 	let cmdArea = "";
+
+			// 	for(let matrix of matrices){
+			// 		let cmd = `matrix(${matrix.join(", ")})`;
+
+			// 		cmdArea += `${cmd} `;
+			// 	}
+
+			// 	let suggestedPath = normalize(viewer.scene.pointclouds[0].pcoGeometry.url + "/../../export.las");
+			// 	const dialog = require('electron').remote.dialog;
+			// 	const chosenPath = dialog.showSaveDialogSync(null, {
+			// 		title: "Chose Export Path",
+			// 		defaultPath: suggestedPath,
+			// 		buttonLabel: "Select",
+			// 		filters: [],
+			// 		properties: ["openDirectory ", "promptToCreate", "createDirectory"],
+			// 	});
+
+			// 	if(!chosenPath){
+			// 		return;
+			// 	}
+
+
+			// 	// let cmd = `${cmdInput} -o ${chosenPath} ${cmdArea}`;
+
+			// 	const { spawn } = require('child_process');
+
+			// 	let exe = './libs/CPotree/filter.exe';
+			// 	let parameters = [
+			// 		...inputPaths,
+			// 		"-o", chosenPath,
+			// 		"--area", cmdArea
+			// 	];
+			// 	console.log(parameters);
+
+			// 	const converter = spawn(exe, parameters);
+
+			// 	converter.stdout.on('data', (data) => {
+			// 		const string = new TextDecoder("utf-8").decode(data);
+
+			// 		console.log("stdout", string);
+			// 	});
+
+			// 	converter.stderr.on('data', (data) => {
+			// 		console.log("==");
+			// 		console.error(`stderr: ${data}`);
+			// 	});
+
+			// 	converter.on('close', (code) => {
+			// 		console.log(`child process exited with code ${code}`);
+			// 	});
+
+
+
+			// });
+
+		});
+
+		// load a file from your disc or USB drive:
+		//Potree.loadPointCloud("C:/dev/workspaces/potree/develop/pointclouds/lion_takanawa/cloud.js", "Point Cloud Name", function(e){
+
+		//Potree.loadPointCloud("http://5.9.65.151/mschuetz/potree/resources/pointclouds/archpro/heidentor/cloud.js", "Point Cloud Name", function(e){
+		//	viewer.scene.addPointCloud(e.pointcloud);
+		//	e.pointcloud.position.z = 0;
+		//	let material = e.pointcloud.material;
+		//	material.size = 1;
+		//	material.pointSizeType = Potree.PointSizeType.ADAPTIVE;
+
+		//	viewer.scene.view.position.set(13.856734292740617, -9.125174923658731, 14.563928417406354);
+		//	viewer.scene.view.lookAt(-3.5482630104475366, 2.728596783815762, 6.1406044783018725);
+		//});
+
+
+
+		//Potree.loadPointCloud("C:/dev/pointclouds/ot_35120C7102A_1/cloud.js", "CA13", e => {
+		////Potree.loadPointCloud("../pointclouds/C/dev/pointclouds/test/cloud.js", "sigeom.sa", e => {
+		//	let scene = viewer.scene;
+		//	let pointcloud = e.pointcloud;
+		//	
+		//	let material = pointcloud.material;
+		//	material.size = 3;
+		//	material.pointSizeType = Potree.PointSizeType.FIXED;
+		//	material.pointColorType = Potree.PointColorType.SOURCE;
+		//	material.shape = Potree.PointShape.SQUARE;
+		//	
+		//	scene.addPointCloud(pointcloud);
+		//	
+		//	scene.view.position.set(693195.575, 3915628.878, 472.872);
+		//	scene.view.lookAt(693747.110, 3916033.332, 33.996);
+		//});
+
+
+		// viewer.onGUILoaded(() => {
+		// 	let message = `
+		// 	Welcome to Potree Desktop.<br>
+		// 	<p>
+		// 	This portable version can be used to load <a href="https://github.com/potree/PotreeConverter", target="_blank"> converted point clouds</a>
+		// 	directly from disk. Just drag & drop a cloud.js file, or it's parent folder, into this window.
+		// 	</p>
+
+		// 	<p>
+		// 	You can set up a default scene by modifying the index.html file in the potree desktop folder. 
+		// 	</p>
+		// 	`;
+
+		// 	//viewer.postMessage(message);
+		// 	viewer.postMessage(message, {duration: 15000});
+		// });
+
+		window.addEventListener('error', (e) => {
+			//console.log(e);
+			viewer.postError(e.error.message);
+		});
+
+
+
+	</script>
+
+
+</body>
+
+</html>

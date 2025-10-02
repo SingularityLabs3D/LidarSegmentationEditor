@@ -1,0 +1,5 @@
+fastapi
+uvicorn[standard]
+open3d
+laspy
+numpy
