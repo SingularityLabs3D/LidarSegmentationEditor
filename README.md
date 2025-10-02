@@ -1,5 +1,3 @@
-
-```markdown
 #  РазмечAI  
 **Сервис для удаления динамических объектов и просмотра 3D LiDAR-карт**  
 *by Singularity Labs*
@@ -93,4 +91,3 @@ cd electron-frontend/
 ---
 
 *Сделано в Singularity Labs*
-```
