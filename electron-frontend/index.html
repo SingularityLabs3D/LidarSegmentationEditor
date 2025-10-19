@@ -192,88 +192,20 @@
 			}
 		}
 
-        function clearPotreeScene(viewer) {
-          const threeScene = viewer.scene.scene || viewer.scene.threeScene || viewer.scene;
-
-          // remove + dispose point clouds
-          const pcs = viewer.scene.pointclouds
-            ? [...viewer.scene.pointclouds]
-            : threeScene.children.filter(o =>
-                (typeof Potree !== "undefined" && o instanceof Potree.PointCloudOctree) ||
-                o.isPoints || o.numVisiblePoints !== undefined
-              );
-
-          for (const pc of pcs) {
-            if (viewer.scene.removePointCloud) { try { viewer.scene.removePointCloud(pc); } catch {} }
-            else {
-              try { threeScene.remove(pc); } catch {}
-              if (viewer.scene.pointclouds) {
-                const i = viewer.scene.pointclouds.indexOf(pc);
-                if (i >= 0) viewer.scene.pointclouds.splice(i, 1);
-              }
-            }
-            try { pc.dispose?.(); } catch {}
-            try { pc.root?.dispose?.(); } catch {}
-            try { pc.material?.dispose?.(); } catch {}
-            try { pc.geometry?.dispose?.(); } catch {}
-          }
-
-          // ⚠️ don’t reassign annotations = []
-          try { viewer.scene.annotations?.removeAll?.(); } catch {}
-          if (Array.isArray(viewer.scene.annotations)) viewer.scene.annotations.length = 0;
-
-          try { Potree?.Global?.lru?.clear?.(); } catch {}
-          try { viewer.scene.lru?.clear?.(); } catch {}
-          try { THREE?.Cache?.clear?.(); } catch {}
-
-          const wasEDL = viewer.getEDLEnabled?.() ?? false;
-          viewer.setEDLEnabled(false);
-          try {
-            const edl = viewer.pRenderer?.edl;
-            edl?.rtColor?.dispose?.();
-            edl?.rtDepth?.dispose?.();
-          } catch {}
-          viewer.setEDLEnabled(wasEDL);
-        }
-
-        function applyMaterialDefaults(mat) {
-          if (!mat) return;
-
-          // Potree 2.x (material has 'activeAttributeName')
-          if ('activeAttributeName' in mat) {
-            // color by per-point RGB(A)
-            mat.activeAttributeName = 'rgba';
-            if ('size' in mat) mat.size = 1.0;
-            if ('shape' in mat && Potree.PointShape && Potree.PointShape.CIRCLE !== undefined) {
-              mat.shape = Potree.PointShape.CIRCLE;
-            }
-            return;
-          }
-
-          // Potree 1.x enums (guard everything)
-          const PCT = (Potree && Potree.PointColorType) ? Potree.PointColorType : null;
-          if (PCT && 'pointColorType' in mat) {
-            mat.pointColorType = (PCT.RGB ?? PCT.COLOR ?? PCT.SOURCE);
-          }
-          if ('size' in mat) mat.size = 1.0;
-          if ('shape' in mat && Potree.PointShape && Potree.PointShape.CIRCLE !== undefined) {
-            mat.shape = Potree.PointShape.CIRCLE;
-          }
-        }
 
         function reloadPointCloud(metaPath) {
-          clearPotreeScene(viewer);
+            for (const pc of viewer.scene.pointclouds ?? []) {
+                pc.visible = false;
+            }
 
-          Potree.loadPointCloud(metaPath, "cloud", (e) => {
-            const pc = e.pointcloud;
+            THREE.Cache?.clear?.();
 
-            if (viewer.scene.addPointCloud) viewer.scene.addPointCloud(pc);
-            else (viewer.scene.scene || viewer.scene).add(pc);
-
-            applyMaterialDefaults(pc.material);
-            viewer.fitToScreen?.();
-          });
+            Potree.loadPointCloud(metaPath, "cloud", (e) => {
+                const pc = e.pointcloud;
+                viewer.scene.addPointCloud(pc);
+            });
         }
+
 
 		function startWatchingMetadata(metaPath) {
 			watchingFile = metaPath;
@@ -281,18 +213,13 @@
 
 			setInterval(() => {
 				const newHash = hashFile(metaPath);
-				console.log("Checking hashes: " + newHash + " " + lastHash);
+				console.log("Checking hashes: " + newHash + " " + lastHash + " in " + metaPath);
 				if (newHash && newHash !== lastHash) {
 					console.log("Metadata changed, reloading:", metaPath);
 					lastHash = newHash;
 
-					// reload point cloud
-					// loadDroppedPointcloud(metaPath);
                     reloadPointCloud(metaPath);
-
-					// if (window.viewer?.postMessage) {
 					window.viewer.postMessage(`Загружена новейшая сегментация: ${metaPath}`, { duration: 5000 });
-					// }
 				}
 			}, 10000); // every 10s
 		}

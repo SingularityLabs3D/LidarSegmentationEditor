@@ -50,6 +50,20 @@ export function initSidePanel(viewer) {
         return [
             { id: "A1", type: "Person", coords: [Math.sin(now / 2000) * 0.10, 0.5, 0.2], zoomLevel: 1 },
             { id: "B2", type: "Vehicle", coords: [0.3, Math.cos(now / 2000) * 0.10, 0], zoomLevel: 2 },
+            { id: "B2", type: "Vehicle", coords: [0.3, Math.cos(now / 2000) * 0.10, 0], zoomLevel: 2 },
+            { id: "B2", type: "Vehicle", coords: [0.3, Math.cos(now / 2000) * 0.10, 0], zoomLevel: 2 },
+            { id: "B2", type: "Vehicle", coords: [0.3, Math.cos(now / 2000) * 0.10, 0], zoomLevel: 2 },
+            { id: "B2", type: "Vehicle", coords: [0.3, Math.cos(now / 2000) * 0.10, 0], zoomLevel: 2 },
+            { id: "B2", type: "Vehicle", coords: [0.3, Math.cos(now / 2000) * 0.10, 0], zoomLevel: 2 },
+            { id: "B2", type: "Vehicle", coords: [0.3, Math.cos(now / 2000) * 0.10, 0], zoomLevel: 2 },
+            { id: "C3", type: "Unknown", coords: [0, 0, 0.5], zoomLevel: 5 },
+            { id: "C3", type: "Unknown", coords: [0, 0, 0.5], zoomLevel: 5 },
+            { id: "C3", type: "Unknown", coords: [0, 0, 0.5], zoomLevel: 5 },
+            { id: "C3", type: "Unknown", coords: [0, 0, 0.5], zoomLevel: 5 },
+            { id: "C3", type: "Unknown", coords: [0, 0, 0.5], zoomLevel: 5 },
+            { id: "C3", type: "Unknown", coords: [0, 0, 0.5], zoomLevel: 5 },
+            { id: "C3", type: "Unknown", coords: [0, 0, 0.5], zoomLevel: 5 },
+            { id: "C3", type: "Unknown", coords: [0, 0, 0.5], zoomLevel: 5 },
             { id: "C3", type: "Unknown", coords: [0, 0, 0.5], zoomLevel: 5 },
         ];
     }
@@ -90,18 +104,28 @@ export function initSidePanel(viewer) {
                 ann = new Potree.Annotation({
                     position: new THREE.Vector3(...det.coords),
                     title: title,
-                    description: `(${det.coords.map(c => c.toFixed(2)).join(", ")})`,
+                    // description: `(${det.coords.map(c => c.toFixed(2)).join(", ")})`,
                     cameraPosition: viewer.scene.view.position.clone(),
                     cameraTarget: new THREE.Vector3(...det.coords),
                 });
                 ann.scaleByDistance = true;
-                ann.addEventListener("click", () => lookAtPosition(det.coords, det.zoomLevel));
+                ann.addEventListener("click", () => {
+                    lookAtPosition(det.coords, det.zoomLevel);
+                    let prevColor = document.getElementById(det.id).style.backgroundColor
+                    document.getElementById(det.id).scrollIntoView();
+                    document.getElementById(det.id).style.backgroundColor = "#144c32";
+                    setTimeout(() => {
+                        document.getElementById(det.id).style.backgroundColor = prevColor;
+                    }, 5000)
+
+
+                });
                 viewer.scene.annotations.add(ann);
                 annotationMap.set(det.id, ann);
             } else {
                 // update existing position or label if needed
                 ann.position.copy(new THREE.Vector3(...det.coords));
-                ann.description = `(${det.coords.map(c => c.toFixed(2)).join(", ")})`;
+                // ann.description = `(${det.coords.map(c => c.toFixed(2)).join(", ")})`;
             }
         }
 
@@ -143,7 +167,8 @@ export function initSidePanel(viewer) {
             const row = document.createElement("div");
             row.style.marginBottom = "10px";
             row.style.borderBottom = "1px solid rgba(255,255,255,0.2)";
-            row.style.paddingBottom = "6px";
+            row.style.padding = "6px";
+            row.id = det.id;
 
             const label = document.createElement("div");
             label.textContent = det.type;
