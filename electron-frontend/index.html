@@ -167,6 +167,7 @@
 		const fs = require("fs");
 		const crypto = require("crypto");
         const { ipcRenderer, mainWindow } = require('electron');
+        import { initSidePanel } from "./src/sidepanel.js";
 
 		{
 			// open links in the standard browser instead of electron
@@ -340,7 +341,7 @@
                     metaPath = path.join(data.output_directory, 'potree_output', 'metadata.json');
 
                     // console.log("received path:" + metaPath);
-                    // loadDroppedPointcloud(metaPath);
+                    loadDroppedPointcloud(metaPath);
                     startWatchingMetadata(metaPath);
                 }
 			}
@@ -359,6 +360,11 @@
 			noDragAndDrop: true,
 		};
 		window.viewer = new Potree.Viewer(elRenderArea, viewerArgs);
+
+        // Initialize the mock object sidebar
+        import * as THREE from "./libs/three.js/build/three.module.js";
+        window.THREE = THREE; // expose for sidepanel.js
+        initSidePanel(window.viewer);
 
 		viewer.setEDLEnabled(true);
 		viewer.setFOV(60);
@@ -519,6 +525,8 @@
 
 
 	</script>
+
+
 
 
 </body>
