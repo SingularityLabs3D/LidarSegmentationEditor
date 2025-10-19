@@ -61,15 +61,45 @@ export function initSidePanel(viewer) {
         const view = viewer.scene.view;
         const target = new THREE.Vector3(...coords);
 
-        const dir = view.position.clone().sub(view.getPivot()).normalize();
-        const distance = view.position.distanceTo(view.getPivot());
+        const startPos = view.position.clone();
+        const startTarget = view.getPivot().clone();
 
-        view.position.copy(target.clone().add(dir.multiplyScalar(distance)));
-        view.lookAt(target);
-        view.setView(view.position, target);
+        const dir = startPos.clone().sub(startTarget).normalize();
+        const distance = startPos.distanceTo(startTarget);
 
-        viewer.scene.view = view;
-        viewer.scene.viewChanged = true;
-        viewer.postMessage(`Looking at ${coords.join(", ")}`, { duration: 1500 });
+        const endTarget = target.clone();
+        const endPos = target.clone().add(dir.multiplyScalar(distance));
+
+        const from = { t: 0 };
+        const to = { t: 1 };
+
+        const posInterp = new THREE.Vector3();
+        const targetInterp = new THREE.Vector3();
+
+        const tween = new TWEEN.Tween(from)
+            .to(to, 1000) // 1 second
+            .easing(TWEEN.Easing.Quadratic.InOut)
+            .onUpdate(() => {
+                posInterp.lerpVectors(startPos, endPos, from.t);
+                targetInterp.lerpVectors(startTarget, endTarget, from.t);
+
+                view.position.copy(posInterp);
+                view.lookAt(targetInterp);
+                view.setView(view.position, targetInterp);
+                viewer.scene.viewChanged = true;
+            })
+            .onComplete(() => {
+                view.setView(endPos, endTarget);
+                viewer.scene.viewChanged = true;
+                viewer.postMessage(`Looking at ${coords.join(", ")}`, { duration: 1500 });
+            })
+            .start();
+
+        function animateTweens() {
+            requestAnimationFrame(animateTweens);
+            TWEEN.update();
+        }
+        animateTweens();
     }
+
 }
