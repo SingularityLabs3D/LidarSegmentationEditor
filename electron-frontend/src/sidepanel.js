@@ -1,3 +1,14 @@
+async function postJSON(url, data) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json(); // or res.text()
+}
+
+
 export function initSidePanel(viewer) {
     // === DOM setup ===
     const panel = document.createElement("div");
@@ -18,7 +29,7 @@ export function initSidePanel(viewer) {
     });
 
     const header = document.createElement("h3");
-    header.textContent = "Detections";
+    header.textContent = "Dynamic object detections";
     header.style.textAlign = "center";
     header.style.marginTop = "0";
     panel.appendChild(header);
@@ -39,43 +50,75 @@ export function initSidePanel(viewer) {
 
     document.body.appendChild(panel);
 
+    deleteBtn.addEventListener("click", async () => {
+      // collect selected ids from the side panel
+      // const checked = Array.from(
+      //   panel.querySelectorAll('#detection_list input[type="checkbox"]:checked')
+      // ).map(cb => cb.dataset.id);
+
+      // if (checked.length === 0) {
+      //   alert("No objects selected!");
+      //   return;
+      // }
+
+      deleteBtn.disabled = true;
+      try {
+        postJSON("http://127.0.0.1:8001/delete").then(console.log).catch(console.error);
+      } catch (err) {
+        console.error("Delete failed:", err);
+        alert("Failed to delete selected objects.");
+      } finally {
+        deleteBtn.disabled = false;
+      }
+    });
+
+
     // === State ===
     let detections = [];
 
-    // === Mock API fetchers ===
-    async function fetchDetections() {
-        // Mock GET /api/detections
-        await new Promise((r) => setTimeout(r, 300)); // fake latency
-        const now = Date.now();
-        return [
-            { id: "A1", type: "Person", coords: [Math.sin(now / 2000) * 0.10, 0.5, 0.2], zoomLevel: 1 },
-            { id: "B2", type: "Vehicle", coords: [0.3, Math.cos(now / 2000) * 0.10, 0], zoomLevel: 2 },
-            { id: "B2", type: "Vehicle", coords: [0.3, Math.cos(now / 2000) * 0.10, 0], zoomLevel: 2 },
-            { id: "B2", type: "Vehicle", coords: [0.3, Math.cos(now / 2000) * 0.10, 0], zoomLevel: 2 },
-            { id: "B2", type: "Vehicle", coords: [0.3, Math.cos(now / 2000) * 0.10, 0], zoomLevel: 2 },
-            { id: "B2", type: "Vehicle", coords: [0.3, Math.cos(now / 2000) * 0.10, 0], zoomLevel: 2 },
-            { id: "B2", type: "Vehicle", coords: [0.3, Math.cos(now / 2000) * 0.10, 0], zoomLevel: 2 },
-            { id: "B2", type: "Vehicle", coords: [0.3, Math.cos(now / 2000) * 0.10, 0], zoomLevel: 2 },
-            { id: "C3", type: "Unknown", coords: [0, 0, 0.5], zoomLevel: 5 },
-            { id: "C3", type: "Unknown", coords: [0, 0, 0.5], zoomLevel: 5 },
-            { id: "C3", type: "Unknown", coords: [0, 0, 0.5], zoomLevel: 5 },
-            { id: "C3", type: "Unknown", coords: [0, 0, 0.5], zoomLevel: 5 },
-            { id: "C3", type: "Unknown", coords: [0, 0, 0.5], zoomLevel: 5 },
-            { id: "C3", type: "Unknown", coords: [0, 0, 0.5], zoomLevel: 5 },
-            { id: "C3", type: "Unknown", coords: [0, 0, 0.5], zoomLevel: 5 },
-            { id: "C3", type: "Unknown", coords: [0, 0, 0.5], zoomLevel: 5 },
-            { id: "C3", type: "Unknown", coords: [0, 0, 0.5], zoomLevel: 5 },
-        ];
+    // === Real API fetchers (FastAPI in another container) ===
+    // Configure base URL via global, env-injected variable, or default Docker service DNS
+    const API_BASE = window.DETECTION_API_BASE || "http://127.0.0.1:8001";
+
+    /**
+     * GET /detections?scene=<id>
+     * Expected response: { detections: [{ id, type, coords:[x,y,z], zoomLevel }] }
+     */
+    async function fetchDetections(sceneId) {
+        const url = new URL(`${API_BASE}/detections`);
+        if (sceneId) url.searchParams.set("scene", sceneId);
+        const res = await fetch(url.toString(), { headers: { accept: "application/json" } });
+        if (!res.ok) throw new Error(`GET /detections failed: ${res.status}`);
+        const data = await res.json();
+        const arr = Array.isArray(data) ? data : (data.detections || []);
+        // normalize + dedupe by id
+        const seen = new Set();
+        return arr
+            .map(d => ({
+                id: String(d.id),
+                type: d.type || "unknown",
+                coords: Array.isArray(d.coords) && d.coords.length === 3 ? d.coords : [0,0,0],
+                zoomLevel: Number.isFinite(d.zoomLevel) ? d.zoomLevel : 2
+            }))
+            .filter(d => (seen.has(d.id) ? false : (seen.add(d.id), true)));
     }
 
+    /**
+     * POST /detections/delete
+     * Body: { ids: [ "id1","id2", ... ] }
+     */
     async function postDelete(ids) {
-        // Mock POST /api/delete
-        console.log("POST /api/delete", ids);
-        await new Promise((r) => setTimeout(r, 200)); // fake delay
-        // remove from local state
-        detections = detections.filter((d) => !ids.includes(d.id));
+        const res = await fetch(`${API_BASE}/detections/delete`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ ids })
+        });
+        if (!res.ok) throw new Error(`POST /detections/delete failed: ${res.status}`);
+        // optimistic update
+        detections = detections.filter(d => !ids.includes(d.id));
         renderList();
     }
+
     // === Annotation utilities ===
     let annotationMap = new Map(); // id → annotation
 
@@ -274,16 +317,16 @@ export function initSidePanel(viewer) {
 
 
     // === Hook delete button ===
-    deleteBtn.onclick = () => {
-        const checked = Array.from(list.querySelectorAll("input[type=checkbox]:checked")).map(
-            (cb) => cb.dataset.id
-        );
-        if (checked.length === 0) {
-            alert("No objects selected!");
-            return;
-        }
-        postDelete(checked);
-    };
+    // deleteBtn.onclick = () => {
+    //     const checked = Array.from(list.querySelectorAll("input[type=checkbox]:checked")).map(
+    //         (cb) => cb.dataset.id
+    //     );
+    //     if (checked.length === 0) {
+    //         alert("No objects selected!");
+    //         return;
+    //     }
+    //     postDelete(checked);
+    // };
 
     // === Polling loop ===
     async function pollLoop() {

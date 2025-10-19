@@ -19,6 +19,48 @@ def run_step(cmd, desc):
     print(f"[DONE] {desc} took {elapsed:.2f} seconds")
     return elapsed
 
+# def run_conversion_pipeline(input_pcd_path: str, output_dir: str):
+#     total_start = time.perf_counter()
+#     os.makedirs(output_dir, exist_ok=True)
+# 
+#     ascii_pcd = os.path.join(output_dir, "points_ascii.pcd")
+#     ascii_fixed = os.path.join(output_dir, "points_ascii_fixed.pcd")
+#     uncompressed_pcd = os.path.join(output_dir, "points_uncompressed.pcd")  # binary (uncompressed)
+#     colored_las = os.path.join(output_dir, "points_colored.las")
+#     potree_output = os.path.join(output_dir, "potree_output")
+# 
+#     steps = [
+#         # 1a) to ASCII
+#         (f"pcl_convert_pcd_ascii_binary {input_pcd_path} {ascii_pcd} 0",
+#          "PCD → ASCII"),
+#         # 1b) fix colors (assign white to points without color)
+#         (f"python fix_colors_pcd.py {ascii_pcd} {ascii_fixed}",
+#          "Assign white to points with no color"),
+#         # 1c) back to uncompressed binary
+#         (f"pcl_convert_pcd_ascii_binary {ascii_fixed} {uncompressed_pcd} 1",
+#          "ASCII → Binary (uncompressed)"),
+#         # 2) PCD → LAS (your script)
+#         (f"python diy_pdal.py {uncompressed_pcd} {colored_las}",
+#          "Convert Binary PCD → LAS"),
+#         # 3) LAS → Potree
+#         (f"./PotreeConverter {colored_las} -o {potree_output}",
+#          "Convert LAS → Potree format"),
+#     ]
+# 
+#     timings = {}
+#     for cmd, desc in steps:
+#         elapsed = run_step(cmd, desc)
+#         timings[desc] = elapsed
+# 
+#     total_end = time.perf_counter()
+#     timings["Total pipeline"] = total_end - total_start
+# 
+#     print("\n=== Summary ===")
+#     for desc, t in timings.items():
+#         print(f"{desc}: {t:.2f} s")
+#     return timings
+
+
 def run_conversion_pipeline(input_pcd_path: str, output_dir: str):
     total_start = time.perf_counter()
     

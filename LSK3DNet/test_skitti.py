@@ -36,6 +36,71 @@ from multiprocessing import Pool
 from multiprocessing.shared_memory import SharedMemory
 from converter import run_conversion_pipeline
 
+import json 
+from sklearn.cluster import DBSCAN
+
+# fastapi
+import os, sys, struct
+from fastapi import FastAPI
+import uvicorn
+
+
+# =========================
+# FastAPI service wrapper
+# =========================
+app = FastAPI(title="Segmentation Service")
+
+
+@app.post("/segment")
+def segment():
+    global configs
+    """
+    Trigger segmentation for a given PCD path.
+    Copies the file into $WORKDIR/points_uncompressed.pcd and runs the pipeline.
+    Returns output artifact paths.
+    """
+    main(configs)
+
+    # workdir = os.getenv("WORKDIR", ".")
+    # os.makedirs(workdir, exist_ok=True)
+    # dst = os.path.join(workdir, "points_uncompressed.pcd")
+
+    # # copy source into expected location
+    # shutil.copy2(path, dst)
+
+    # # run single-GPU worker inline
+    # main_worker(0, 1, configs)
+
+    # out_seg = os.path.join(workdir, "points_segmented.pcd")
+    # out_clean = os.path.join(workdir, "points_cleaned.pcd")
+    return {
+        "status": "ok",
+    }
+
+
+instances = []
+@app.get("/detections")
+def segment():
+    global instances
+    return instances
+
+
+@app.post("/delete")
+def segment():
+    global instances
+    print("Saved to output_normalized.ply/pcd")
+    params = {"path": os.path.join(os.getenv("WORKDIR"), "points_cleaned.pcd")}
+    headers = {"accept": "application/json"}
+    print("fetching...")
+    timeout = 120
+    r = requests.get(f"http://converter:8000/convert", params=params, headers=headers, timeout=timeout)
+    print("fetched...")
+    instances = []
+
+    return {
+        "status": "ok",
+    }
+
 
 warnings.filterwarnings("ignore")
 
@@ -50,13 +115,6 @@ DYNAMIC_MAPPING = {
     "truck": "dynamic"
 }
 
-# Testing settings
-# parser = argparse.ArgumentParser(description='LSKNet Testing')
-# parser.add_argument('--config_path', default='./config/lk-semantickitti_sub_tta.yaml')
-# parser.add_argument('--ip', default='127.0.0.1', type=str)
-# parser.add_argument('--port', default='3023', type=str)
-# parser.add_argument('--num_vote', type=int, default=8, help='number of voting in the test') #14
-# args = parser.parse_args()
 args = {
     'config_path': "./config/lk-semantickitti_sub_tta.yaml",
     'ip': '127.0.0.1',
@@ -86,8 +144,9 @@ exp_dir_root = exp_dir_root[0] if len(exp_dir_root) > 1 else ''
 exp_dir = './'+ exp_dir_root +'/'
 if not os.path.exists(exp_dir):
     os.makedirs(exp_dir)
-shutil.copy('test_skitti.py', str(exp_dir))
-shutil.copy('config/lk-semantickitti_sub_tta.yaml', str(exp_dir))
+
+# shutil.copy('test_skitti.py', str(exp_dir))
+# shutil.copy('config/lk-semantickitti_sub_tta.yaml', str(exp_dir))
 
 
 def main(configs):
@@ -219,43 +278,6 @@ def validate_pcd(path, allow_trailing_ws=True):
             return False, f"Unknown DATA format: {data_fmt}"
 
 
-# def split_pointcloud(points, cube_size=50.0, overlap=5.0):
-#     """
-#     Split (N,3) points into overlapping cubes of side cube_size.
-#     Returns a list of (sub_points, idxs) for each chunk.
-#     overlap: amount of overlap between cubes in all directions.
-#     """
-#     min_xyz = points.min(axis=0)
-#     max_xyz = points.max(axis=0)
-
-#     step = cube_size - overlap  # stride between cube starts
-#     chunks = []
-#     # iterate over all grid cubes
-#     xs = np.arange(min_xyz[0], max_xyz[0] + step, step)
-#     ys = np.arange(min_xyz[1], max_xyz[1] + step, step)
-#     zs = np.arange(min_xyz[2], max_xyz[2] + step, step)
-
-#     for x in tqdm(xs):
-#         for y in ys:
-#             for z in zs:
-#                 # compute cube bounds
-#                 x_min, x_max = x, x + cube_size
-#                 y_min, y_max = y, y + cube_size
-#                 z_min, z_max = z, z + cube_size
-
-#                 mask = (
-#                     (points[:,0] >= x_min) & (points[:,0] <= x_max) &
-#                     (points[:,1] >= y_min) & (points[:,1] <= y_max) &
-#                     (points[:,2] >= z_min) & (points[:,2] <= z_max)
-#                 )
-#                 idxs = np.nonzero(mask)[0]
-#                 if len(idxs) == 0:
-#                     continue
-#                 sub_points = points[idxs]
-#                 chunks.append((sub_points, idxs))
-#     return chunks
-
-
 def _chunk_worker(args):
     (x_min, x_max, y_min, y_max, z_min, z_max), shm_name, shape, dtype = args
     shm = SharedMemory(name=shm_name)
@@ -270,45 +292,213 @@ def _chunk_worker(args):
     shm.close()
     return idxs  # may be empty
 
-def split_pointcloud(points, cube_size=50.0, overlap=5.0, processes=None, task_chunk=64):
-    """
-    Parallel split of (N,3) points into overlapping cubes (cube_size).
-    Returns list of (sub_points, idxs).
-    """
-    if overlap >= cube_size:
-        raise ValueError("overlap must be < cube_size")
+import os
+import numpy as np
+from typing import List, Tuple, Optional
+from multiprocessing import Pool
+from multiprocessing.shared_memory import SharedMemory
 
-    points = np.ascontiguousarray(points)
-    min_xyz = points.min(axis=0)
-    max_xyz = points.max(axis=0)
-
-    step = cube_size - overlap
-    xs = np.arange(min_xyz[0], max_xyz[0] + step, step)
-    ys = np.arange(min_xyz[1], max_xyz[1] + step, step)
-    zs = np.arange(min_xyz[2], max_xyz[2] + step, step)
-
-    # Prepare shared memory for points
-    shm = SharedMemory(create=True, size=points.nbytes)
-    shm_np = np.ndarray(points.shape, dtype=points.dtype, buffer=shm.buf)
-    shm_np[:] = points  # copy once
-
-    bounds = []
-    for x, y, z in product(xs, ys, zs):
-        bounds.append(((x, x + cube_size, y, y + cube_size, z, z + cube_size),
-                       shm.name, points.shape, points.dtype))
-
-    procs = processes or os.cpu_count() or 1
-    chunks = []
+# --- worker for parallel path ---
+def _slice_worker(args):
+    shm_name, shape, dtype, start, end = args
+    shm = SharedMemory(name=shm_name)
     try:
-        with Pool(processes=procs) as pool:
-            for idxs in pool.imap_unordered(_chunk_worker, bounds, chunksize=task_chunk):
-                if idxs.size:
-                    chunks.append((points[idxs], idxs))
+        base = np.ndarray(shape, dtype=dtype, buffer=shm.buf)
+        sub = base[start:end].copy()             # materialize the chunk in worker
+        idxs = np.arange(start, end, dtype=np.int64)
+        return (sub, idxs)
     finally:
         shm.close()
-        shm.unlink()
 
+# def split_pointcloud_spatial(points: np.ndarray,
+#                              chunk_size: int,
+#                              voxel: float = 1.0) -> List[Tuple[np.ndarray, np.ndarray]]:
+#     """
+#     Spatially group points by voxel grid, then split into size-based chunks.
+#     Returns (sub_points, original_indices) for each chunk.
+#     """
+#     if not isinstance(points, np.ndarray) or points.ndim < 2 or points.shape[0] == 0:
+#         return []
+#     N = points.shape[0]
+# 
+#     # Quantize to a voxel grid
+#     pmin = points[:, :3].min(axis=0)
+#     ijk = np.floor((points[:, :3] - pmin) / float(voxel)).astype(np.int64)  # (N,3)
+#     ix, iy, iz = ijk[:,0], ijk[:,1], ijk[:,2]
+# 
+#     # Build a lexicographic key (x-major, then y, then z)
+#     Y = int(iy.max()) + 1
+#     Z = int(iz.max()) + 1
+#     key = (ix * Y + iy) * Z + iz  # 64-bit safe for typical ranges
+# 
+#     order = np.argsort(key, kind="mergesort")          # stable
+#     pts_sorted = points[order]
+#     idx_sorted = order
+# 
+#     # Slice into consecutive chunks (now spatially grouped)
+#     starts = np.arange(0, N, chunk_size, dtype=np.int64)
+#     ends = np.minimum(starts + chunk_size, N)
+# 
+#     chunks = [(pts_sorted[s:e], idx_sorted[s:e]) for s, e in zip(starts, ends)]
+#     return chunks
+
+
+def split_pointcloud_spatial(points: np.ndarray,
+                             chunk_size: int,
+                             voxel: float = 1.0,
+                             overlap: int = 0) -> List[Tuple[np.ndarray, np.ndarray]]:
+    """
+    Spatially group points by voxel grid, then split into size-based chunks with optional overlap.
+    Returns (sub_points, original_indices) for each chunk.
+
+    Args:
+        points: (N, D) array (first 3 columns are XYZ).
+        chunk_size: max points per chunk.
+        voxel: voxel size used only to build a spatial sort key (no downsampling).
+        overlap: number of points to overlap between consecutive chunks (0 = no overlap).
+
+    Notes:
+        - Overlap is along the spatially-sorted sequence, so overlapped regions are near each other in space.
+        - Points will appear in multiple chunks when overlap > 0.
+    """
+    if not isinstance(points, np.ndarray) or points.ndim < 2 or points.shape[0] == 0:
+        return []
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be > 0")
+    if overlap < 0:
+        raise ValueError("overlap must be >= 0")
+    if overlap >= chunk_size:
+        raise ValueError("overlap must be < chunk_size")
+
+    N = points.shape[0]
+
+    # Quantize to voxel grid to obtain a spatially-coherent sort order
+    pmin = points[:, :3].min(axis=0)
+    ijk = np.floor((points[:, :3] - pmin) / float(voxel)).astype(np.int64)  # (N,3)
+    ix, iy, iz = ijk[:, 0], ijk[:, 1], ijk[:, 2]
+
+    # Build lexicographic key (x-major, then y, then z)
+    Y = int(iy.max()) + 1
+    Z = int(iz.max()) + 1
+    key = (ix * Y + iy) * Z + iz
+
+    order = np.argsort(key, kind="mergesort")  # stable
+    pts_sorted = points[order]
+    idx_sorted = order
+
+    # Sliding window with overlap
+    step = chunk_size - overlap
+    starts = np.arange(0, N, step, dtype=np.int64)
+    ends = np.minimum(starts + chunk_size, N)
+
+    chunks = [(pts_sorted[s:e], idx_sorted[s:e]) for s, e in zip(starts, ends)]
     return chunks
+
+
+# def split_pointcloud(points: np.ndarray,
+#                      chunk_size: int,
+#                      processes: Optional[int] = None,
+#                      task_chunk: int = 64,
+#                      copy_on_single: bool = False
+#                      ) -> List[Tuple[np.ndarray, np.ndarray]]:
+#     """
+#     Split (N, 3[+...]) points into consecutive chunks of `chunk_size`.
+#     Ensures every point belongs to exactly one output chunk.
+# 
+#     Returns: list of (sub_points, idxs) where:
+#       - sub_points: (M, D) view (single-process) or copy (multiprocess)
+#       - idxs:       (M,) indices into the original array
+#     """
+#     if not isinstance(points, np.ndarray):
+#         raise TypeError("points must be a numpy.ndarray")
+#     if points.ndim < 2 or points.shape[0] == 0:
+#         return []
+#     if chunk_size <= 0:
+#         raise ValueError("chunk_size must be > 0")
+# 
+#     points = np.ascontiguousarray(points)
+#     N = points.shape[0]
+#     D = points.shape[1]
+# 
+#     # Compute chunk boundaries
+#     starts = np.arange(0, N, chunk_size, dtype=np.int64)
+#     ends = np.minimum(starts + chunk_size, N)
+#     ranges = list(zip(starts.tolist(), ends.tolist()))
+# 
+#     procs = processes or 1
+#     out: List[Tuple[np.ndarray, np.ndarray]] = []
+# 
+#     if procs <= 1:
+#         # Fast path: return views (no copy). Optionally copy if requested.
+#         for s, e in ranges:
+#             sub = points[s:e]
+#             if copy_on_single:
+#                 sub = sub.copy()
+#             idxs = np.arange(s, e, dtype=np.int64)
+#             out.append((sub, idxs))
+#         return out
+# 
+#     # Parallel path: use shared memory to avoid serializing the whole array
+#     shm = SharedMemory(create=True, size=points.nbytes)
+#     try:
+#         shm_np = np.ndarray(points.shape, dtype=points.dtype, buffer=shm.buf)
+#         shm_np[:] = points  # one copy into shared memory
+# 
+#         tasks = [(shm.name, points.shape, points.dtype, s, e) for (s, e) in ranges]
+# 
+#         with Pool(processes=procs) as pool:
+#             # chunksize controls how many slice-jobs each worker pulls at once
+#             for sub, idxs in pool.imap_unordered(_slice_worker, tasks, chunksize=task_chunk):
+#                 out.append((sub, idxs))
+#     finally:
+#         shm.close()
+#         shm.unlink()
+# 
+#     # Note: imap_unordered returns in arbitrary order; restore original order if desired
+#     # (Only needed if you rely on order of chunks; indices remain correct either way.)
+#     out.sort(key=lambda t: t[1][0])
+#     return out
+
+
+# def split_pointcloud(points, cube_size=50.0, overlap=5.0, processes=None, task_chunk=64):
+#     """
+#     Parallel split of (N,3) points into overlapping cubes (cube_size).
+#     Returns list of (sub_points, idxs).
+#     """
+#     if overlap >= cube_size:
+#         raise ValueError("overlap must be < cube_size")
+# 
+#     points = np.ascontiguousarray(points)
+#     min_xyz = points.min(axis=0)
+#     max_xyz = points.max(axis=0)
+# 
+#     step = cube_size - overlap
+#     xs = np.arange(min_xyz[0], max_xyz[0] + step, step)
+#     ys = np.arange(min_xyz[1], max_xyz[1] + step, step)
+#     zs = np.arange(min_xyz[2], max_xyz[2] + step, step)
+# 
+#     # Prepare shared memory for points
+#     shm = SharedMemory(create=True, size=points.nbytes)
+#     shm_np = np.ndarray(points.shape, dtype=points.dtype, buffer=shm.buf)
+#     shm_np[:] = points  # copy once
+# 
+#     bounds = []
+#     for x, y, z in product(xs, ys, zs):
+#         bounds.append(((x, x + cube_size, y, y + cube_size, z, z + cube_size),
+#                        shm.name, points.shape, points.dtype))
+# 
+#     procs = processes or os.cpu_count() or 1
+#     chunks = []
+#     try:
+#         with Pool(processes=procs) as pool:
+#             for idxs in pool.imap_unordered(_chunk_worker, bounds, chunksize=task_chunk):
+#                 if idxs.size:
+#                     chunks.append((points[idxs], idxs))
+#     finally:
+#         shm.close()
+#         shm.unlink()
+# 
+#     return chunks
 
 
 class SphereCrop(object):
@@ -349,7 +539,74 @@ class SphereCrop(object):
         return data_dict
 
 
+def get_dynamic_instances(points, labels, unique_label_str, dynamic_mapping, eps=0.5, min_samples=5):
+    """
+    Разделяет сегментированные точки на отдельные объекты для динамических классов.
+    
+    Args:
+        points (np.ndarray): Массив координат точек (N, 3), где N - количество точек.
+        labels (np.ndarray): Массив меток классов для каждой точки (N,).
+        unique_label_str (list): Список названий классов, где индекс соответствует ID класса.
+        dynamic_mapping (dict): Словарь динамических классов (ключи - названия классов).
+        eps (float): Параметр DBSCAN для максимального расстояния между точками в кластере.
+        min_samples (int): Минимальное количество точек для формирования кластера в DBSCAN.
+    
+    Returns:
+        dict: Словарь, где ключи - названия динамических классов, значения - списки вида
+              [[size_vector, center_vector], ...], где size_vector = [dx, dy, dz],
+              center_vector = [cx, cy, cz].
+    """
+    instances = []
+    dynamic_classes = list(dynamic_mapping.keys())
+    cnt = 1
+    for cls_name in dynamic_classes:
+        if cls_name not in unique_label_str:
+            continue
+        cls_id = unique_label_str.index(cls_name)
+        
+        mask = (labels == cls_id)
+        if not np.any(mask):
+            continue
+        
+        cls_points = points[mask]
+        
+        # Кластеризация с помощью DBSCAN
+        db = DBSCAN(eps=eps, min_samples=min_samples).fit(cls_points)
+        cluster_labels = db.labels_
+        
+        # Игнорируем шум (-1)
+        unique_clusters = np.unique(cluster_labels)
+        unique_clusters = unique_clusters[unique_clusters != -1]
+        
+        inst_list = []
+        for cl_id in unique_clusters:
+            cl_mask = (cluster_labels == cl_id)
+            cl_points = cls_points[cl_mask]
+            
+            if cl_points.shape[0] < min_samples:
+                continue
+            
+            # Вычисление bounding box
+            min_xyz = cl_points.min(axis=0)
+            max_xyz = cl_points.max(axis=0)
+            size = (max_xyz - min_xyz).tolist()  # [dx, dy, dz]
+            
+            # Центр как среднее значение координат точек в кластере
+            center = cl_points.mean(axis=0).tolist()  # [cx, cy, cz]
+            
+            inst_list.append([size, center])
+
+            instances.append({"id": cnt, "type": cls_name, "coords": center, "zoomLevel" : 4})
+            cnt += 1
+        
+        # if inst_list:
+        #     instances[cls_name] = inst_list
+    
+    return instances
+
+
 def main_worker(local_rank, nprocs, configs):
+    global instances
     torch.autograd.set_detect_anomaly(True)
 
     dataset_config = configs['dataset_params']
@@ -385,12 +642,15 @@ def main_worker(local_rank, nprocs, configs):
     if train_hypers['distributed']:
         my_model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(my_model)
 
-    if os.path.exists(model_config['model_load_path']):
+    model_load_path = "output_skitti/opensource_9ks_s030_w64_finetuned_new0.pt"
+    # model_load_path = "output_skitti/opensource_9ks_s030_w64_finetuned0_old.pt"
+    if os.path.exists(model_load_path):
         print('pre-train')
         try:
-            my_model, pre_weight = load_checkpoint_model_mask(model_config['model_load_path'], my_model, pytorch_device)
+            my_model, pre_weight = load_checkpoint_model_mask(model_load_path, my_model, pytorch_device)
+            # my_model, pre_weight = load_checkpoint_model_mask(model_config['model_load_path'], my_model, pytorch_device)
         except:
-            my_model = load_checkpoint_old(model_config['model_load_path'], my_model)
+            my_model = load_checkpoint_old(model_load_path, my_model)
 
     my_model.to(pytorch_device)
     
@@ -433,209 +693,195 @@ def main_worker(local_rank, nprocs, configs):
     #                                                 sampler=val_sampler)
 
 
-    if val_imageset == 'val':
-        if train_hypers.local_rank == 0:
-            # validation
-            print('*'*80)
-            print('Test network performance on validation split')
-            print('*'*80)
-            # pbar = tqdm(total=len(val_dataset_loader), ncols=80)
-            pbar = None
-        else:
-            pbar = None
+    if train_hypers.local_rank == 0:
+        # validation
+        print('*'*80)
+        print('Test network performance on validation split')
+        print('*'*80)
+        # pbar = tqdm(total=len(val_dataset_loader), ncols=80)
+        pbar = None
+    else:
+        pbar = None
 
-        # Load single .pcd fille
-        # pcd_path =  "/workdir/lidar/LSK3DNet/cond_0_new_refine.ply"s
-        # pcd_path = "/work/" + sys.argv[1]
-        # pcd_path = os.path.join(os.getenv("WORKDIR"), "points.pcd")
-        pcd_path = os.path.join(os.getenv("WORKDIR"), "points_uncompressed.pcd")
-        print(pcd_path)
-        # while True:
-        #     ok, msg = validate_pcd(pcd_path)
-        #     if ok:  # File appeared
-        #         break
-        #     
-        #     print(f"Waiting for file, {msg}", flush=True)
-        #     time.sleep(5)
+    # Load single .pcd fille
+    # pcd_path =  "/workdir/lidar/LSK3DNet/cond_0_new_refine.ply"s
+    # pcd_path = "/work/" + sys.argv[1]
+    # pcd_path = os.path.join(os.getenv("WORKDIR"), "points.pcd")
+    pcd_path = os.path.join(os.getenv("WORKDIR"), "points_uncompressed.pcd")
+    print(pcd_path)
+    # while True:
+    #     ok, msg = validate_pcd(pcd_path)
+    #     if ok:  # File appeared
+    #         break
+    #     
+    #     print(f"Waiting for file, {msg}", flush=True)
+    #     time.sleep(5)
 
-        while True:
-            if os.path.isfile(pcd_path):  # File appeared
-                break
-            
-            print(f"Waiting for file", flush=True)
-            time.sleep(5)
+    while True:
+        if os.path.isfile(pcd_path):  # File appeared
+            break
+        
+        print(f"Waiting for file", flush=True)
+        time.sleep(5)
 
-        print(f"Got file: {pcd_path}", flush=True)
-        time.sleep(3)
+    print(f"Got file: {pcd_path}", flush=True)
+    time.sleep(3)
 
-        # Read with tensor API to keep extra attributes (e.g., "intensity")
-        pcd_t = o3d.t.io.read_point_cloud(pcd_path)
-        
-        xyz = pcd_t.point["positions"].numpy().astype(np.float32)  # (N, 3)
-        # max_xyz = xyz.max(axis=0)
-        # min_xyz = xyz.min(axis=0)
-        # # xyz = xyz - min_xyz - ((max_xyz-min_xyz)/2)
-        # xyz -= max_xyz
-        
-        if False and "intensity" in pcd_t.point:
-            sig = pcd_t.point["intensity"].numpy().astype(np.float32).reshape(-1, 1)  # (N, 1)
-        else:
-            sig = np.zeros((xyz.shape[0], 1), np.float32)
+    # Read with tensor API to keep extra attributes (e.g., "intensity")
+    pcd_t = o3d.t.io.read_point_cloud(pcd_path)
+    
+    xyz = pcd_t.point["positions"].numpy().astype(np.float32)  # (N, 3)
+    # max_xyz = xyz.max(axis=0)
+    # min_xyz = xyz.min(axis=0)
+    # # xyz = xyz - min_xyz - ((max_xyz-min_xyz)/2)
+    # xyz -= max_xyz
+    
+    if False and "intensity" in pcd_t.point:
+        sig = pcd_t.point["intensity"].numpy().astype(np.float32).reshape(-1, 1)  # (N, 1)
+    else:
+        sig = np.zeros((xyz.shape[0], 1), np.float32)
 
-        downsample_transform = SphereCrop(point_max=configs['dataset_params']['val_data_loader']['d_point_num'], mode="random")
-        
-        my_model.eval()
-        hist_list = []
-        time_list = []
-        
-        
+    downsample_transform = SphereCrop(point_max=configs['dataset_params']['val_data_loader']['d_point_num'], mode="random")
+    
+    my_model.eval()
+    hist_list = []
+    time_list = []
+    
+    
+    N_total = xyz.shape[0]
+    num_classes = int(model_config["num_classes"])
+
+    # Preallocate global accumulators (fixed!)
+    full_logits = np.zeros((N_total, num_classes), dtype=np.float32)
+    counts = np.zeros((N_total,), dtype=np.int32)
+
+    # Split by size
+    chunks = split_pointcloud_spatial(xyz, chunk_size=120_000, voxel=1.0, overlap=50_000)
+    # chunks = split_pointcloud(xyz, chunk_size=120_000)
+    print("LEN CHUNKS", len(chunks))
+
+    for i_iter, (sub_points, idxs) in enumerate(chunks):
+        # Build per-chunk input features [x,y,z,intensity]
+        sub_sig = sig[idxs]  # (M,1)
+        xyz_chunk = sub_points.astype(np.float32, copy=False)
+
+        # cur_min = xyz_chunk.min(axis=0)
+        # cur_max = xyz_chunk.max(axis=0)
+        # cur_span = np.maximum(cur_max - cur_min, 1e-6)  # avoid div by zero
+        # target_min = np.array([-50, -50, -4])
+        # target_max = np.array([50, 50, 2])
+        # tgt_span = (target_max - target_min)
+        # pts_scaled = (xyz_chunk - cur_min) / cur_span * tgt_span + target_min
+        # feats_np = np.hstack([pts_scaled, sub_sig]).astype(np.float32)
+        feats_np = np.hstack([xyz_chunk, sub_sig]).astype(np.float32)
+
+        M = feats_np.shape[0]
+
+        # Pack model dict
+        val_data_dict = {
+            "points": torch.from_numpy(feats_np).to(pytorch_device),                 # (M,4)
+            "normal": torch.zeros((M, 3), dtype=torch.float32, device=pytorch_device),
+            "ref_sub_points": torch.from_numpy(xyz_chunk).to(pytorch_device),        # (M,3)
+            "batch_idx": torch.zeros((M,), dtype=torch.long, device=pytorch_device),
+            "batch_size": 1,
+            "labels": torch.zeros((M,), dtype=torch.long, device=pytorch_device),
+            "raw_labels": torch.zeros((M,), dtype=torch.long, device=pytorch_device),
+            "origin_len": int(M),
+            "indices": torch.arange(M, dtype=torch.long, device=pytorch_device),
+            "path": pcd_path,
+            "point_num": int(M),
+        }
+        raw_labels = val_data_dict['raw_labels'].to(pytorch_device)
+        # vote_logits = torch.zeros(N, model_config['num_classes']).to(pytorch_device)
+        indices = val_data_dict['indices'].to(pytorch_device)
+
+        val_data_dict['points'] = val_data_dict['points'].to(pytorch_device)
+        val_data_dict['normal'] = val_data_dict['normal'].to(pytorch_device)
+        val_data_dict['batch_idx'] = val_data_dict['batch_idx'].to(pytorch_device)
+        val_data_dict['labels'] = val_data_dict['labels'].to(pytorch_device)
+
+        # Forward
         with torch.no_grad():
-            chunks = split_pointcloud(xyz, cube_size=140.0, overlap=70.0)
-        
-            # full_logits = np.zeros((120000 * len(chunks), model_config['num_classes']), dtype=np.float32)
-            # counts = np.zeros((120000 * len(chunks), 1), dtype=np.float32)
-            # full_logits = np.ndarray([], dtype=np.float32)
-            # counts = np.ndarray([], dtype=np.float32)
-            full_logits = []
-            counts = []
-            xyz_downsampled = []
-        
-            for i_iter_val, (sub_points, idxs) in enumerate(chunks):
-                # if i_iter_val > 30:
-                #    break
-                
-                # Slice intensity to the same subset and append as 4th feature
-                i_sig = sig[idxs]  # (N,1) aligned with sub_points
-        
-                N = sub_points.shape[0]
-                print(N, flush=True)
-                NEW_N = min(sub_points.shape[0], 120000)
-                val_data_dict = {
-                    "points": torch.from_numpy(np.hstack([sub_points, i_sig])).float(),
-                    "normal": torch.zeros((N, 3), dtype=torch.float32),
-                    "ref_sub_points": torch.from_numpy(sub_points.astype(np.float32)),
-                    "batch_idx": torch.zeros((NEW_N,), dtype=torch.long),
-                    "batch_size": 1,
-                    "labels": torch.zeros((N,), dtype=torch.long),
-                    "raw_labels": torch.zeros((N,), dtype=torch.long),
-                    "origin_len": N,
-                    "indices": torch.arange(NEW_N, dtype=torch.long),
-                    "path": pcd_path,
-                    "point_num": NEW_N,
-                }
+            out_dict = my_model(val_data_dict)    # must set out_dict['logits'] = (M, num_classes)
+            logits = out_dict["logits"].detach().float().cpu().numpy()  # (M,C)
 
-                val_data_dict = downsample_transform(val_data_dict)
-                idx_downsampled = range(len(xyz_downsampled), len(xyz_downsampled) + NEW_N)
-                xyz_new = val_data_dict["points"][:, :3].cpu().numpy()
-                xyz_downsampled.append(deepcopy(xyz_new))
-                # print(val_data_dict["points"][:, :3].shape)
-                N = NEW_N
+        # Accumulate into global arrays
+        full_logits[idxs, :] += logits
+        counts[idxs] += 1
 
-                # Norm
-                current_min = xyz_new.min(axis=0)
-                current_max = xyz_new.max(axis=0)
-                target_min = np.array([-50, -50, -4])
-                target_max = np.array([50, 50, 2])
-                current_span = current_max - current_min
-                target_span = target_max - target_min              
-                pts_scaled = (xyz_new - current_min) / current_span * target_span + target_min
-                unscaled_points = val_data_dict["points"]
-                val_data_dict["points"] = torch.from_numpy(np.hstack([pts_scaled, sig[idx_downsampled]])).float()
-                
-                # if sub_points.shape[0] <= 10000:
-                #     continue
-            
-                raw_labels = val_data_dict['raw_labels'].to(pytorch_device)
-                vote_logits = torch.zeros(N, model_config['num_classes']).to(pytorch_device)
-                indices = val_data_dict['indices'].to(pytorch_device)
-            
-                val_data_dict['points'] = val_data_dict['points'].to(pytorch_device)
-                val_data_dict['normal'] = val_data_dict['normal'].to(pytorch_device)
-                val_data_dict['batch_idx'] = val_data_dict['batch_idx'].to(pytorch_device)
-                val_data_dict['labels'] = val_data_dict['labels'].to(pytorch_device)
-            
-                with torch.no_grad():
-                    val_data_dict = my_model(val_data_dict)
-                logits = val_data_dict['logits']
-                vote_logits.index_add_(0, indices, logits)
-            
-                predict_labels = torch.argmax(vote_logits, dim=1).cpu().numpy()
-                print(set(list(predict_labels)), flush=True)
-            
-                # full_logits[idx_downsampled] += logits.cpu().numpy()
-                # counts[idx_downsampled] += 1
-                full_logits.append(logits.cpu().numpy())
+        # cleanup GPU aggressively
+        del feats_np
+        # del feats_np, pts_scaled
+        torch.cuda.empty_cache()
+
+        print(f"[{i_iter+1}/{len(chunks)}] processed {M} points; classes seen:",
+              set(np.argmax(logits, axis=1).tolist()), flush=True)
 
 
-                # if i_iter_val > 0 and i_iter_val % 50 == 0:
+        # if (i_iter != 0 and i_iter % 25 == 0) or i_iter == len(chunks) - 1:
+
+    # Average logits and finalize prediction
+    counts_safe = np.maximum(counts[:, None], 1)               # (N,1)
+    full_logits = full_logits / counts_safe                    # (N,C)
+    final_pred = full_logits.argmax(axis=1)                    # (N,)
+
+    # Dynamic → red; Non-dynamic → second color (green here)
+    dyn_set = set(DYNAMIC_MAPPING.keys())
+    print("dyn set", dyn_set)
+    def _name(cid: int) -> str:
+        return unique_label_str[cid] if 0 <= cid < len(unique_label_str) else f"class_{cid}"
+    is_dynamic = np.fromiter((_name(int(c)) in dyn_set for c in final_pred),
+                             count=final_pred.shape[0], dtype=bool)
+ 
+    colors = np.empty((final_pred.shape[0], 3), dtype=np.float32)
+    colors[:] = np.array([0.0, 1.0, 0.0], dtype=np.float32)   # non-dynamic = green
+    colors[is_dynamic] = np.array([1.0, 0.0, 0.0], dtype=np.float32)  # dynamic = red
+
+    unseen_mask = (counts == 0)
+    if unseen_mask.any():
+        colors[unseen_mask] = np.array([1.0, 1.0, 1.0], dtype=np.float32)
+
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(xyz.astype(np.float32))
+    pcd.colors = o3d.utility.Vector3dVector(colors)
+
+    out_dir = os.getenv("WORKDIR", ".")
+    new_pcd_path = os.path.join(out_dir, "points_segmented.pcd")
+    o3d.io.write_point_cloud(new_pcd_path, pcd)
+    print(f"Saved colored point cloud to: {new_pcd_path}")
+
+    instances = get_dynamic_instances(xyz.astype(np.float32), final_pred, unique_label_str, DYNAMIC_MAPPING, eps=1, min_samples=500)
+    print(instances)
+
+    # Удаление динамических точек и сохранение очищенного облака
+    mask_non_dynamic = ~is_dynamic  # Маска для нединамических точек
+
+    # Фильтруем точки и цвета
+    xyz_cleaned = xyz[mask_non_dynamic]
+    colors_cleaned = colors[mask_non_dynamic]
+
+    # Сохраняем очищенное облако
+    pcd_cleaned = o3d.geometry.PointCloud()
+    pcd_cleaned.points = o3d.utility.Vector3dVector(xyz_cleaned.astype(np.float32))
+    pcd_cleaned.colors = o3d.utility.Vector3dVector(colors_cleaned.astype(np.float32))
+    new_pcd_cleaned_path = os.path.join(os.getenv("WORKDIR"), "points_cleaned.pcd")
+    o3d.io.write_point_cloud(new_pcd_cleaned_path, pcd_cleaned)
+    print("Saved cleaned to output_normalized_cleaned.ply/pcd")
+
+    # Send request
+    print("Saved to output_normalized.ply/pcd")
+    params = {"path": new_pcd_path}
+    headers = {"accept": "application/json"}
+    print("fetching...")
+    timeout = 120
+    r = requests.get(f"http://converter:8000/convert", params=params, headers=headers, timeout=timeout)
+    print("fetched...")
 
 
-            print("Sending to fronend")
-            # average and take argmax
-            # full_logits /= np.maximum(counts, 1)
-            merged_full_logits = np.vstack(full_logits).astype(np.float32)
-            final_pred = merged_full_logits.argmax(1)
-            # В main_worker, после создания unique_label_str
-            
-            # Add "unlabeled" if model predicts it
-            if model_config['num_classes'] > len(unique_label_str):
-                unique_label_str = ['unlabeled'] + unique_label_str
-            
-            # Print class-to-color mapping
-            print("\nClass to Color Mapping:")
-            print(f"{'ID':<5} {'Class Name':<20} {'RGB Color':<25}")
-            print("-" * 50)
-            for i in range(len(unique_label_str)):
-                # label = DYNAMIC_MAPPING.get(unique_label_str[i], "static")
-                is_dynamic = int(unique_label_str[i] in DYNAMIC_MAPPING.keys())
-                rgb = plt.get_cmap('tab20')(is_dynamic % 20)[:3]  # Get RGB for class i
-                rgb_str = f"({rgb[0]:.3f}, {rgb[1]:.3f}, {rgb[2]:.3f})"
-                print(f"{i:<5} {unique_label_str[i]:<20} {rgb_str:<25}, {is_dynamic}")
-            
-            # Save colored point cloud
-            colors = plt.get_cmap('tab20')(final_pred % 20)[:, :3]
-            pcd = o3d.geometry.PointCloud()
-            stacked = np.vstack(xyz_downsampled)
-            pcd.points = o3d.utility.Vector3dVector(stacked.astype(np.float32))
-            pcd.colors = o3d.utility.Vector3dVector(colors.astype(np.float32))
-            new_pcd_path = os.path.join(os.getenv("WORKDIR"), "points_segmented.pcd")
-            o3d.io.write_point_cloud(new_pcd_path, pcd)
-
-            # Удаление динамических точек и сохранение очищенного облака
-            dynamic_classes = set(DYNAMIC_MAPPING.keys())
-            is_dynamic = np.array([unique_label_str[pred] in dynamic_classes for pred in final_pred])
-            mask_non_dynamic = ~is_dynamic  # Маска для нединамических точек
-
-            # Фильтруем точки и цвета
-            stacked_cleaned = stacked[mask_non_dynamic]
-            colors_cleaned = colors[mask_non_dynamic]
-
-            # Сохраняем очищенное облако
-            pcd_cleaned = o3d.geometry.PointCloud()
-            pcd_cleaned.points = o3d.utility.Vector3dVector(stacked_cleaned.astype(np.float32))
-            pcd_cleaned.colors = o3d.utility.Vector3dVector(colors_cleaned.astype(np.float32))
-            new_pcd_cleaned_path = os.path.join(os.getenv("WORKDIR"), "points_cleaned.pcd")
-            o3d.io.write_point_cloud(new_pcd_cleaned_path, pcd_cleaned)
-            print("Saved cleaned to output_normalized_cleaned.ply/pcd")
-
-            # Send request
-            print("Saved to output_normalized.ply/pcd")
-            params = {"path": new_pcd_path}
-            headers = {"accept": "application/json"}
-            print("fetching...")
-            timeout = 120
-            r = requests.get(f"http://converter:8000/convert", params=params, headers=headers, timeout=timeout)
-            print("fetched...")
-
-
-        # if train_hypers.local_rank == 0:
-        #     pbar.close()
-            # print('Predicted test labels are saved in %s. Need to be shifted to original label format before submitting to the Competition website.' % exp_dir)
-            # print('Remapping script can be found in semantic-kitti-api.')
-
-        print("COMPLETED", flush=True)
+    print("COMPLETED", flush=True)
 
 if __name__ == '__main__':
     print(' '.join(sys.argv))
     print(configs)
-    main(configs)
+    # main(configs)
+    uvicorn.run("test_skitti:app", host="0.0.0.0", port=8001)

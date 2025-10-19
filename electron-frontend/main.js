@@ -35,7 +35,7 @@ function createWindow () {
 	// 	slashes: true
 	// }));
 	mainWindow.loadFile(path.join(__dirname, 'index.html'));
-	  mainWindow.webContents.openDevTools();
+	// mainWindow.webContents.openDevTools();
 
 	// mainWindow.webContents.once('did-finish-load', async () => {
 	// 	const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {

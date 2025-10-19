@@ -207,27 +207,16 @@ thing_class: # thing class in panoptic segmentation
 split: # sequence numbers
   train:
     - 0
-    - 8
+    - 1
     - 2
     - 3
-    - 4
-    - 1
+    - 5
+    - 8
     - 6
     - 7
     - 9
     - 10
-    - 11
-    - 12
-    - 13
-    - 14
-    - 15
-    - 16
-    - 17
-    - 18
-    - 19
-    - 20
-    - 21
   valid:
-    - 5
+    - 4
   test:
     - 21

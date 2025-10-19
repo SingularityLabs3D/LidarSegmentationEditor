@@ -1,19 +1,13 @@
 services:
-  # completion:
-  #   image: ${COMPLETION_IMAGE}
-  #   container_name: completion_service
-  #   ports:
-  #     - "8002:8000"
-  #   restart: unless-stopped
-  #   networks:
-  #     - my_network
-
   segmentation:
     image: ${SEGMENTATION_IMAGE}
+    user: "${UID}:${GID}"
     container_name: segmentation_service
     shm_size: 2g
     volumes:
       - ${MOUNTDIR}:${MOUNTDIR}
+    ports:
+      - "8001:8001"
     deploy:
       resources:
         reservations:
@@ -29,6 +23,7 @@ services:
 
   converter:
     image: ${CONVERTER_IMAGE}
+    user: "${UID}:${GID}"
       # build: converter/
     container_name: fastapi_service
     ports:

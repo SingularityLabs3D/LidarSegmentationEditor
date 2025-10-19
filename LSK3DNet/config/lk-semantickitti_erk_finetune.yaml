@@ -27,8 +27,8 @@ model_params:
     - 3
     - 6
     - 9
-  model_load_path: 'output_skitti/opensource_9ks_s030_w64_finetuned0.pt'
-  model_save_path: 'output_skitti/opensource_9ks_s030_w64_finetuned.pt'
+  model_load_path: 'output_skitti/opensource_9ks_s030_w64_0.pt'
+  model_save_path: 'output_skitti/opensource_9ks_s030_w64_finetuned_new.pt'
 
 ###################
 ## Dataset options
@@ -89,7 +89,7 @@ dataset_params:
     polarmix_aug: False
     mix_aug: False
     instance_aug: False
-    d_point_num: 120000 #80000
+    d_point_num: 160000 #80000
 
   val_data_loader:
     data_path: "/workdir/datasets/SemanticKITTI/merged/"
@@ -103,7 +103,7 @@ dataset_params:
     dropout_aug: False
     polarmix_aug: False
     mix_aug: False
-    d_point_num: 120000
+    d_point_num: 160000
 
 
 ###################
@@ -120,7 +120,7 @@ train_params:
   lambda_lovasz: 1
   decay_step: 500
   decay_rate: 0.90
-  eval_every_n_steps: 1000 #683 #597 #1195
+  eval_every_n_steps: 50 #683 #597 #1195
   distributed: False
   amp_enabled: True
 

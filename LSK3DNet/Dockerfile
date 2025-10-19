@@ -33,15 +33,20 @@ RUN apt-get update && apt-get install -y wget libgl1-mesa-glx pcl-tools libc6 li
 
 # ENV PATH="/usr/bin/cmake/bin:${PATH}"
 
-COPY . .
+RUN pip install laspy
+RUN pip install pybind11
+RUN pip install opencv-python-headless
+
+RUN pip install fastapi
+RUN pip install uvicorn
+
+COPY . /workspace/app
+WORKDIR /workspace/app
 
 RUN mkdir -p /workdir/lidar/LSK3DNet
 RUN mkdir -p /workspace/lidar/LSK3DNet
 RUN cp -r c_utils /workdir/lidar/LSK3DNet
 RUN cp -r c_utils /workspace/lidar/LSK3DNet
-
-RUN pip install pybind11
-RUN pip install opencv-python-headless
 
 RUN cd /workdir/lidar/LSK3DNet/c_utils \
 && mkdir -p build \
@@ -50,10 +55,13 @@ RUN cd /workdir/lidar/LSK3DNet/c_utils \
 && make
 
 RUN export PYTHONPATH=/workdir/lidar/LSK3DNet/c_utils/build:$PYTHONPATH
-
-RUN pip install laspy
+ENV PYTHONPATH="/workdir/lidar/LSK3DNet/c_utils/build:${PYTHONPATH}"
+ENV LD_LIBRARY_PATH="/workspace:${LD_LIBRARY_PATH}"
 
 ENV LD_LIBRARY_PATH="/workspace/:$LD_LIBRARY_PATH"
 
+RUN chown -R 1000:1000 /workspace/app
+RUN chmod -R 755 /workspace/app
+USER 1000:1000
 
 ENTRYPOINT [ "python" , "test_skitti.py" ]

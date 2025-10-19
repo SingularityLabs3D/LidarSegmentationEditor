@@ -8,6 +8,9 @@
 
 ---
 
+![Before](readme_images/before.png)
+![After](readme_images/after.png)
+
 ##  Быстрый старт
 
 ### Требования
@@ -91,3 +94,4 @@ cd electron-frontend/
 ---
 
 *Сделано в Singularity Labs*
+

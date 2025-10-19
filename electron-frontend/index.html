@@ -228,7 +228,7 @@
 				console.log("Selected PCD:", filePath);
 				document.getElementById("welcome_overlay").style.display = "none";
 
-				const BASE_URL = "http://localhost:8000"; // change if needed
+				const BASE_URL = "http://localhost:8000";
 
 				console.log("Here 1");
 				// Hide overlay
@@ -265,6 +265,22 @@
                     // console.log("received path:" + metaPath);
                     loadDroppedPointcloud(metaPath);
                     startWatchingMetadata(metaPath);
+
+                    // start segmentation
+                    async function postJSON(url, data) {
+                      const res = await fetch(url, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(data),
+                      });
+                      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                      return res.json(); // or res.text()
+                    }
+
+                    // usage
+                    postJSON("http://127.0.0.1:8001/segment")
+                      .then(console.log)
+                      .catch(console.error);
                 }
 			}
 		};
