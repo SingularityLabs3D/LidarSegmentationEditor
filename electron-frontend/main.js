@@ -104,17 +104,6 @@ function createWindow () {
 		});
 	});
 
-	// {
-	// 	const { spawn, fork, execFile } = require('child_process');
-	// 	let inputPaths = ["D:/dev/pointclouds/bunny_20M.las"];
-	// 	let chosenPath = "D:/dev/pointclouds/bunny_20M.las_converted";
-
-	// 	const process = spawn('./libs/PotreeConverter2/Converter.exe', [
-	// 		...inputPaths,
-	// 		"-o", chosenPath
-	// 	], {
-
-	// 	});
 
 	// 	process.stdout.on('data', (data) => {
 	// 		console.log(`stdout: ${data}`);
