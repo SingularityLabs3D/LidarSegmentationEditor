@@ -48,9 +48,9 @@ export function initSidePanel(viewer) {
         await new Promise((r) => setTimeout(r, 300)); // fake latency
         const now = Date.now();
         return [
-            { id: "A1", type: "Person", coords: [Math.sin(now / 2000) * 10, 5, 2] },
-            { id: "B2", type: "Vehicle", coords: [3, Math.cos(now / 2000) * 10, 0] },
-            { id: "C3", type: "Unknown", coords: [0, 0, 5] },
+            { id: "A1", type: "Person", coords: [Math.sin(now / 2000) * 0.10, 0.5, 0.2], zoomLevel: 1 },
+            { id: "B2", type: "Vehicle", coords: [0.3, Math.cos(now / 2000) * 0.10, 0], zoomLevel: 2 },
+            { id: "C3", type: "Unknown", coords: [0, 0, 0.5], zoomLevel: 5 },
         ];
     }
 
@@ -61,6 +61,51 @@ export function initSidePanel(viewer) {
         // remove from local state
         detections = detections.filter((d) => !ids.includes(d.id));
         renderList();
+    }
+    // === Annotation utilities ===
+    let annotationMap = new Map(); // id → annotation
+
+    function clearAnnotations() {
+        for (const ann of annotationMap.values()) {
+            viewer.scene.annotations.remove(ann);
+        }
+        annotationMap.clear();
+    }
+
+    function syncAnnotations() {
+        // remove stale
+        for (const [id, ann] of annotationMap.entries()) {
+            if (!detections.find(d => d.id === id)) {
+                viewer.scene.annotations.remove(ann);
+                annotationMap.delete(id);
+            }
+        }
+
+        // add / update
+        for (const det of detections) {
+            let ann = annotationMap.get(det.id);
+
+            if (!ann) {
+                const title = $(`<span>${det.type}</span>`);
+                ann = new Potree.Annotation({
+                    position: new THREE.Vector3(...det.coords),
+                    title: title,
+                    description: `(${det.coords.map(c => c.toFixed(2)).join(", ")})`,
+                    cameraPosition: viewer.scene.view.position.clone(),
+                    cameraTarget: new THREE.Vector3(...det.coords),
+                });
+                ann.scaleByDistance = true;
+                ann.addEventListener("click", () => lookAtPosition(det.coords, det.zoomLevel));
+                viewer.scene.annotations.add(ann);
+                annotationMap.set(det.id, ann);
+            } else {
+                // update existing position or label if needed
+                ann.position.copy(new THREE.Vector3(...det.coords));
+                ann.description = `(${det.coords.map(c => c.toFixed(2)).join(", ")})`;
+            }
+        }
+
+        viewer.scene.viewChanged = true;
     }
 
     // === Render list ===
@@ -88,7 +133,7 @@ export function initSidePanel(viewer) {
         originBtn.textContent = "Look at";
         originBtn.style.width = "100%";
         originBtn.style.marginTop = "4px";
-        originBtn.onclick = () => lookAtPosition([0, 0, 0]);
+        originBtn.onclick = () => lookAtPosition([0.0, 0.0, 0.0], 1);
         originRow.appendChild(originBtn);
 
         list.appendChild(originRow);
@@ -123,7 +168,7 @@ export function initSidePanel(viewer) {
             const btn = document.createElement("button");
             btn.textContent = "Look at";
             btn.style.flex = "1";
-            btn.onclick = () => lookAtPosition(det.coords);
+            btn.onclick = () => lookAtPosition(det.coords, det.zoomLevel);
 
             btnRow.appendChild(checkbox);
             btnRow.appendChild(btn);
@@ -131,10 +176,12 @@ export function initSidePanel(viewer) {
 
             list.appendChild(row);
         }
+
+        syncAnnotations();
     }
 
     // === Look-at tween ===
-    function lookAtPosition(coords) {
+    function lookAtPosition(coords, zoomLevel) {
         if (!viewer?.scene?.view) {
             console.warn("Viewer not ready for lookAtPosition");
             return;
@@ -143,25 +190,36 @@ export function initSidePanel(viewer) {
         const view = viewer.scene.view;
         const target = new THREE.Vector3(...coords);
 
+        // configurable absolute params
+        const yaw = Math.PI / 3;        // horizontal rotation (radians)
+        const pitch = 0.4;            // vertical angle from horizon (radians)
+        const duration = 1200;
+        zoomLevel = zoomLevel ?? 1;
+
+        // --- compute final camera position in spherical coords around target ---
+        const offset = new THREE.Vector3();
+        offset.x = zoomLevel * Math.cos(pitch) * Math.sin(yaw);
+        offset.y = zoomLevel * Math.cos(pitch) * Math.cos(yaw);
+        offset.z = zoomLevel * Math.sin(pitch);
+
+        const endPos = target.clone().add(offset);
+
+        // start and end values
         const startPos = view.position.clone();
         const startTarget = view.getPivot().clone();
-        const dir = startPos.clone().sub(startTarget).normalize();
-        const distance = startPos.distanceTo(startTarget);
-
-        const endTarget = target.clone();
-        const endPos = target.clone().add(dir.multiplyScalar(distance));
 
         const from = { t: 0 };
         const to = { t: 1 };
+
         const posInterp = new THREE.Vector3();
         const targetInterp = new THREE.Vector3();
 
         const tween = new TWEEN.Tween(from)
-            .to(to, 1000)
+            .to(to, duration)
             .easing(TWEEN.Easing.Quadratic.InOut)
             .onUpdate(() => {
                 posInterp.lerpVectors(startPos, endPos, from.t);
-                targetInterp.lerpVectors(startTarget, endTarget, from.t);
+                targetInterp.lerpVectors(startTarget, target, from.t);
 
                 view.position.copy(posInterp);
                 view.lookAt(targetInterp);
@@ -169,19 +227,26 @@ export function initSidePanel(viewer) {
                 viewer.scene.viewChanged = true;
             })
             .onComplete(() => {
-                view.setView(endPos, endTarget);
+                view.position.copy(endPos);
+                view.lookAt(target);
+                view.setView(endPos, target);
                 viewer.scene.viewChanged = true;
-                viewer.postMessage(`Looking at ${coords.join(", ")}`, { duration: 1500 });
+                viewer.postMessage(
+                    `Looking at ${coords.join(", ")} (zoom=${zoomLevel.toFixed(1)})`,
+                    { duration: 1500 }
+                );
             })
             .start();
 
-        // update tween frames
+        // run tweens each frame
         function animateTweens() {
             requestAnimationFrame(animateTweens);
             TWEEN.update();
         }
         animateTweens();
     }
+
+
 
     // === Hook delete button ===
     deleteBtn.onclick = () => {
